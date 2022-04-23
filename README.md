@@ -14,12 +14,12 @@ openssl req -x509 -nodes -days 365 -newkey rsa:4096 -keyout mykey.pem -out mycer
 #### Compile
 ```
 # Testing
-nim compile -d:ssl --passC:-flto tsh.nim
-nim compile -d:ssl --passC:-flto tshd.nim
+nim compile -d:ssl --passC:-flto nsh.nim
+nim compile -d:ssl --passC:-flto nshd.nim
 
 # Static compiled for Linux
-nim --passL:-static -d:release -d:ssl --opt:size c tsh.nim
-nim --passL:-static -d:release -d:ssl --opt:size c tshd.nim
+nim --passL:-static -d:release -d:ssl --opt:size c nsh.nim
+nim --passL:-static -d:release -d:ssl --opt:size c nshd.nim
 
 # Musl
 wget https://musl.libc.org/releases/musl-1.2.3.tar.gz
@@ -34,15 +34,15 @@ make install
 
 export PATH=$PATH:/usr/local/musl/bin
 
-nim --gcc.exe:musl-gcc --gcc.linkerexe:musl-gcc --passL:-static -d:release -d:ssl --opt:size c tsh.nim 
-nim --gcc.exe:musl-gcc --gcc.linkerexe:musl-gcc --passL:-static -d:release -d:ssl --opt:size c tshd.nim 
+nim --gcc.exe:musl-gcc --gcc.linkerexe:musl-gcc --passL:-static -d:release -d:ssl --opt:size c nsh.nim 
+nim --gcc.exe:musl-gcc --gcc.linkerexe:musl-gcc --passL:-static -d:release -d:ssl --opt:size c nshd.nim 
 
 ```
 
 #### Usage
 ```
 # Server
-> $ ./tshd -h
+> $ ./nshd -h
 Nim-shell server
 
 Usage:
@@ -56,7 +56,7 @@ Options:
   -k, --key=KEY              Override default shared secret
 
 # Client
-> $ ./tsh -h
+> $ ./nsh -h
 Nim-shell client
 
 Usage:
