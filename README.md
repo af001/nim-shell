@@ -1,8 +1,6 @@
 # nim-shell
 A simple bind shell written in NIM. 
 
-Working...still quite a few bugs. 
-
 This project contains a server (nshd) that acts as a backdoor on a server. The server will bind to a port and can be configured communicate over SSL. The client is the interactive shell that is used to communicate with the backdoor. This code is for learning purposes only.
 
 #### Configuration
