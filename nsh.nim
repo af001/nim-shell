@@ -173,6 +173,10 @@ proc main(port: int, target, key: string, ssl, verbose: bool) =
 
         # Verify shared secret
         giveShell = parseServerVerification(jsonData, keychain.hashIds)
+
+        if verbose:
+            echo "Client: authentication successfull"
+
     except JsonParsingError:
         echo "Client: authentication failed or SSL?"
         client.close()
@@ -184,34 +188,17 @@ proc main(port: int, target, key: string, ssl, verbose: bool) =
             run = true
             command: string
         
+        # Handle commands and communication to server
         while run:
             command = getCommand()
 
-            case command:
-                of "exit":
-                    run = false
-                of "shutdown":
-                    run = false
-                    client.send(encodeMsg(command, keychain.hashIds) & "\r\L")
-                of "upload":
-                    let uploadFile = command.split()[1]
-                    if fileExists(uploadFile):
-                        let fileContents = readFile(uploadFile)
-                        client.send(encodeMsg(fileContents, keychain.hashIds) & "\r\L")
-                    else:
-                        echo "Client: file not found"
-                of "help":
-                    echo "exit\tshutdown\tupload\tdownload"
-                of "help exit":
-                    echo "exit: Exit the shell"
-                of "help shutdown":
-                    echo "shutdown: Shutdown the server and exit"
-                of "help upload":
-                    echo "upload <path-on-client>: Upload file. Requires full path and uploads to current dir on server"
-                of "help download":
-                    echo "download <file-on-server>: Download file. Requires full path and filename"
-                else:
-                    client.send(encodeMsg(command, keychain.hashIds) & "\r\L")
+            if command == "exit":
+                run = false
+            elif command == "shutdown":
+                run = false
+                client.send(encodeMsg(command, keychain.hashIds) & "\r\L")
+            else:
+                client.send(encodeMsg(command, keychain.hashIds) & "\r\L")
 
             if run:
                 var isData: bool = true
@@ -224,6 +211,7 @@ proc main(port: int, target, key: string, ssl, verbose: bool) =
 
         client.close()
 
+# Parse client command line params
 var p = newParser:
     help("Nim-shell client")
     flag("-s", "--ssl", help="Enable SSL")
