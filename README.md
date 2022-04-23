@@ -42,10 +42,33 @@ nim --gcc.exe:musl-gcc --gcc.linkerexe:musl-gcc --passL:-static -d:release -d:ss
 #### Usage
 ```
 # Server
-./tshd -p 1011 -v
+> $ ./tshd -h
+Nim-shell server
+
+Usage:
+   [options]
+
+Options:
+  -h, --help
+  -v, --verbose              Enable verbost output for debugging
+  -n, --nossl                Disable SSL
+  -p, --port=PORT            Override default port
+  -k, --key=KEY              Override default shared secret
 
 # Client
-./tsh -p 1011 -t 192.168.0.3 -k 1234 --ssl -v
+> $ ./tsh -h
+Nim-shell client
+
+Usage:
+   [options]
+
+Options:
+  -h, --help
+  -s, --ssl                  Enable SSL
+  -v, --verbose              Enable verbose output
+  -p, --port=PORT            Target port
+  -t, --target=TARGET        Target IP
+  -k, --key=KEY              Secret key
 ```
 
 #### Future 
