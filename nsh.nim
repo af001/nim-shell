@@ -20,7 +20,9 @@ type
         private: int
         public: int
         serverPublic: int
-        hashid: Hashids
+        sharedKey: string
+        sharedSecret: int
+        hashIds: Hashids
 
     MSG = object
         msg: string
@@ -75,83 +77,157 @@ proc toString(str: seq[char]): string =
     for ch in str:
         add(result, ch)
 
-proc main(port: int, target, key: string, ssl: bool) =    
+proc encodeMsg(m: string, h: Hashids): string =
+    #let hid: Hashids = createHashids(k & s)
+    return h.encode(m.mapIt(it.ord))
+
+proc decodeMsg(m: string, h: Hashids): string =
+    var 
+        d: seq[int] = h.decode(m)
+        c: seq[char] = d.mapIt(it.chr)
+    return toString(c)
+
+proc verifyServer(j: JsonNode, k: string): KEYCHAIN = 
+    let 
+        dh: DH = to(j, DH)
+        privateKey: int = getRandomPrime()
+        primeNumber: int = dh.prime
+        primitiveRoot: int = dh.base
+        serverPubKey: int = dh.pub
+        publicKey: int = calcPublicKey(primitiveRoot, privateKey, primeNumber)
+        secret: int = calcSecretKey(serverPubKey, privateKey, primeNumber)
+        hids: Hashids = createHashids(k & $secret)
+    return  KEYCHAIN(private: privateKey, public: publicKey, serverPublic: serverPubKey, sharedKey: k, sharedSecret: secret, hashIds: hids)
+
+proc parseServerVerification(j: JsonNode, h: Hashids): bool =
+    var 
+        rMsg: MSG = to(j, MSG)
+        mymsg = rMsg.msg
+        dec = secureHash(encodeMsg("Connected", h))
+
+    if $dec == mymsg:
+        return true
+    else:
+        return false
+
+proc getCommand(): string =
+    stdout.write("nsh> ")
+    return stdin.readLine()
+
+proc main(port: int, target, key: string, ssl, verbose: bool) =    
 
     let client: Socket = newSocket()
+    var
+        keychain: KEYCHAIN
+        giveShell: bool = false
 
+    # Wrap SSL, if true
     if ssl:
         var ctx = newContext(verifyMode = CVerifyNone)
         wrapSocket(ctx, client)
 
-    client.connect(target, Port(port))
-    stdout.writeLine("Client: connected to server on address " & $target & ":" & $port)
+    # Connect to server
+    try: 
+        client.connect(target, Port(port))
+    except:
+        client.close()
+        echo "Client: unable to connect"
+        quit(2)
+
+    if verbose:
+        echo "Client: connected to server on address " & $target & ":" & $port
 
     # Parse Response
-    var recvJson = client.recvLine(timeout = 10)
-    var keychain: KEYCHAIN
-    var giveShell: bool = false
+    var 
+        recvJson: string 
+        jsonData: JsonNode
 
     try:
-        var jsonData = parseJson(recvJson)
+        recvJson = client.recvLine(timeout = 10)
+    except TimeoutError:
+        client.close()
+        echo "Client: unable to connect. SSL?"
+        quit(2)
+    
+    try:
+        jsonData = parseJson(recvJson)
+        keychain = verifyServer(jsonData, key)
+    except JsonParsingError:
+        echo "Client: authentication failed"
+        client.close()
+        quit(2)
+
+    # Generate salted shared secret as sha1 hash
+    # Generate JSON object to send to server
+    try: 
         let 
-            dh: DH = to(jsonData, DH)
-            privateKey: int = getRandomPrime()
-            primeNumber: int = dh.prime
-            primitiveRoot: int = dh.base
-            serverPubKey: int = dh.pub
-            publicKey: int = calcPublicKey(primitiveRoot, privateKey, primeNumber)
-            secret: int = calcSecretKey(serverPubKey, privateKey, primeNumber)
-            hid: Hashids = createHashids(key & $secret)
-            idMsg = secureHash(hid.encode("Success".mapIt(it.ord)))
-            jsonObject = %* {"pub": publicKey, "msg": $idMsg}  
+            idMsg = secureHash(encodeMsg("Success", keychain.hashIds))
+            jsonObject = %* {"pub": keychain.public, "msg": $idMsg}  
 
-        keychain = KEYCHAIN(private: privateKey, public: publicKey, serverPublic: serverPubKey, hashid: hid)
-
+        # Send public key and salted shared secret as sha1 hash
         client.send($jsonObject & "\r\L")
 
+        # Receive response from server and parse JSON
         recvJson = client.recvLine(timeout = 10)
         jsonData = parseJson(recvJson)
-        var rMsg: MSG = to(jsonData, MSG)
-        var mymsg = rMsg.msg
-        #var dec: seq[int] = hid.decode(mymsg)
-        var dec = secureHash(hid.encode("Connected".mapIt(it.ord)))
 
-        if $dec == mymsg:
-            echo "Authentication successful"
-            giveShell = true
-
+        # Verify shared secret
+        giveShell = parseServerVerification(jsonData, keychain.hashIds)
     except JsonParsingError:
-        echo "Authentication failed"
+        echo "Client: authentication failed or SSL?"
         client.close()
+        quit(2)
 
-    var run = true
-
+    # Start shell and run commands
     if giveShell:
+        var 
+            run = true
+            command: string
+        
         while run:
-            stdout.write("> ")
-            let command: string = stdin.readLine()
+            command = getCommand()
 
-            if command == "exit":
-                run = false
-            else:
-                client.send(command & "\r\L")
-
-                if command == "shutdown":
+            case command:
+                of "exit":
                     run = false
+                of "shutdown":
+                    run = false
+                    client.send(encodeMsg(command, keychain.hashIds) & "\r\L")
+                of "upload":
+                    let uploadFile = command.split()[1]
+                    if fileExists(uploadFile):
+                        let fileContents = readFile(uploadFile)
+                        client.send(encodeMsg(fileContents, keychain.hashIds) & "\r\L")
+                    else:
+                        echo "Client: file not found"
+                of "help":
+                    echo "exit\tshutdown\tupload\tdownload"
+                of "help exit":
+                    echo "exit: Exit the shell"
+                of "help shutdown":
+                    echo "shutdown: Shutdown the server and exit"
+                of "help upload":
+                    echo "upload <path-on-client>: Upload file. Requires full path and uploads to current dir on server"
+                of "help download":
+                    echo "download <file-on-server>: Download file. Requires full path and filename"
                 else:
-                    var isData: bool = true
-                    while isData:
-                        let receive: string = client.recvLine()
-                        if receive == "\r\L":
-                            isData = false
-                        else:
-                            echo receive
+                    client.send(encodeMsg(command, keychain.hashIds) & "\r\L")
+
+            if run:
+                var isData: bool = true
+                while isData:
+                    let receive: string = client.recvLine()
+                    if receive == "\r\L":
+                        isData = false
+                    else:
+                        echo decodeMsg(receive, keychain.hashIds)
 
         client.close()
 
 var p = newParser:
     help("Nim-shell client")
     flag("-s", "--ssl", help="Enable SSL")
+    flag("-v", "--verbose", help="Enable verbose output")
     option("-p", "--port", help="Target port", required=true)
     option("-t", "--target", help="Target IP", required=true)
     option("-k", "--key", help="Secret key", required=true)
@@ -160,7 +236,7 @@ try:
     var x = p.parse(commandLineParams())
     echo x.target
     
-    main(parseInt(x.port), x.target, x.key, x.ssl)
+    main(parseInt(x.port), x.target, x.key, x.ssl, x.verbose)
 except ShortCircuit as e:
     if e.flag == "argparse_help":
         echo p.help
