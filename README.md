@@ -11,6 +11,12 @@ Generate certs
 openssl req -x509 -nodes -days 365 -newkey rsa:4096 -keyout mykey.pem -out mycert.pem
 ```
 
+#### Custom Dependencies
+```
+# Updated version of hashids
+nimble install https://github.com/af001/nim-hashids
+```
+
 #### Compile
 ```
 # Testing
