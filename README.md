@@ -27,21 +27,23 @@ nim compile -d:ssl --passC:-flto nsh.nim
 nim compile -d:ssl --passC:-flto nshd.nim
 
 # Dynamic compiled for Linux
-nim --passC:-flto -d:release -d:ssl --opt:size c nsh.nim
-nim --passC:-flto -d:release -d:ssl --opt:size c nshd.nim
+nim --passC:-flto --passL:-s -d:release -d:ssl --opt:size c nsh.nim
+nim --passC:-flto --passL:-s -d:release -d:ssl --opt:size c nshd.nim
 
 # Static compiled for Linux
-nim --passL:-static -d:release -d:ssl --opt:size c nsh.nim
-nim --passL:-static -d:release -d:ssl --opt:size c nshd.nim
+nim --passL:-static --passL:-s -d:release -d:ssl --opt:size c nsh.nim
+nim --passL:-static --passL:-s -d:release -d:ssl --opt:size c nshd.nim
 
-# Windows
-nim --os:windows --cpu:amd64 --gcc.exe:x86_64-w64-mingw32-gcc --gcc.linkerexe:x86_64-w64-mingw32-gcc -d:ssl -d:release --app:gui c nshd.nim
+# Windows x86_64
+nim --os:windows --cpu:amd64 --gcc.exe:x86_64-w64-mingw32-gcc --gcc.linkerexe:x86_64-w64-mingw32-gcc -d:ssl -d:release --passL:-s c nsh.nim
+nim --os:windows --cpu:amd64 --gcc.exe:x86_64-w64-mingw32-gcc --gcc.linkerexe:x86_64-w64-mingw32-gcc -d:ssl -d:release --passL:-s --app:gui c nshd.nim
 
 # Musl
 wget https://musl.libc.org/releases/musl-1.2.3.tar.gz
 tar xzvf musl-1.2.3.tar.gz
 cd musl-1.2.3
 
+# Modify arch, if required
 sed -i 's/ARCH = i386/ARCH = x86_64/g'
 
 ./configure --prefix=/usr/local/musl/
@@ -53,6 +55,9 @@ export PATH=$PATH:/usr/local/musl/bin
 nim --gcc.exe:musl-gcc --gcc.linkerexe:musl-gcc --passL:-static -d:release -d:ssl --opt:size c nsh.nim 
 nim --gcc.exe:musl-gcc --gcc.linkerexe:musl-gcc --passL:-static -d:release -d:ssl --opt:size c nshd.nim 
 
+# UPX
+upx --best nshd
+sed -i 's/UPX/aLd/g' nshd
 ```
 
 #### Usage
