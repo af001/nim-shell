@@ -1,8 +1,6 @@
 # nim-shell
 A simple bind shell written in NIM. 
 
-Working...still quite a few bugs. 
-
 This project contains a server (nshd) that acts as a backdoor on a server. The server will bind to a port and can be configured communicate over SSL. The client is the interactive shell that is used to communicate with the backdoor. This code is for learning purposes only.
 
 #### Configuration
@@ -13,15 +11,31 @@ Generate certs
 openssl req -x509 -nodes -days 365 -newkey rsa:4096 -keyout mykey.pem -out mycert.pem
 ```
 
+#### Custom Dependencies
+```
+# Updated version of hashids
+nimble install https://github.com/af001/nim-hashids
+
+# Modified version of nim-daemon and nim-daemonize
+nimble install https://github.com/af001/nim-daemons
+```
+
 #### Compile
 ```
 # Testing
-nim compile -d:ssl --passC:-flto tsh.nim
-nim compile -d:ssl --passC:-flto tshd.nim
+nim compile -d:ssl --passC:-flto nsh.nim
+nim compile -d:ssl --passC:-flto nshd.nim
+
+# Dynamic compiled for Linux
+nim --passC:-flto -d:release -d:ssl --opt:size c nsh.nim
+nim --passC:-flto -d:release -d:ssl --opt:size c nshd.nim
 
 # Static compiled for Linux
-nim --passL:-static -d:release -d:ssl --opt:size c tsh.nim
-nim --passL:-static -d:release -d:ssl --opt:size c tshd.nim
+nim --passL:-static -d:release -d:ssl --opt:size c nsh.nim
+nim --passL:-static -d:release -d:ssl --opt:size c nshd.nim
+
+# Windows
+nim --os:windows --cpu:amd64 --gcc.exe:x86_64-w64-mingw32-gcc --gcc.linkerexe:x86_64-w64-mingw32-gcc -d:ssl -d:release --app:gui c nshd.nim
 
 # Musl
 wget https://musl.libc.org/releases/musl-1.2.3.tar.gz
@@ -36,20 +50,42 @@ make install
 
 export PATH=$PATH:/usr/local/musl/bin
 
-nim --gcc.exe:musl-gcc --gcc.linkerexe:musl-gcc --passL:-static -d:release -d:ssl --opt:size c tsh.nim 
-nim --gcc.exe:musl-gcc --gcc.linkerexe:musl-gcc --passL:-static -d:release -d:ssl --opt:size c tshd.nim 
+nim --gcc.exe:musl-gcc --gcc.linkerexe:musl-gcc --passL:-static -d:release -d:ssl --opt:size c nsh.nim 
+nim --gcc.exe:musl-gcc --gcc.linkerexe:musl-gcc --passL:-static -d:release -d:ssl --opt:size c nshd.nim 
 
 ```
 
 #### Usage
 ```
 # Server
-./tshd -p 1011 -v
+> $ ./nshd -h
+Nim-shell server
+
+Usage:
+   [options]
+
+Options:
+  -h, --help
+  -v, --verbose              Enable verbost output for debugging
+  -n, --nossl                Disable SSL
+  -p, --port=PORT            Override default port
+  -k, --key=KEY              Override default shared secret
 
 # Client
-./tsh -p 1011 -t 192.168.0.3 -k 1234 --ssl -v
+> $ ./nsh -h
+Nim-shell client
+
+Usage:
+   [options]
+
+Options:
+  -h, --help
+  -s, --ssl                  Enable SSL
+  -v, --verbose              Enable verbose output
+  -p, --port=PORT            Target port
+  -t, --target=TARGET        Target IP
+  -k, --key=KEY              Secret key
 ```
 
 #### Future 
-1. daemonize nshd
-2. Upload and download feature
+1. Upload and download feature
