@@ -15,6 +15,9 @@ openssl req -x509 -nodes -days 365 -newkey rsa:4096 -keyout mykey.pem -out mycer
 ```
 # Updated version of hashids
 nimble install https://github.com/af001/nim-hashids
+
+# Modified version of nim-daemon and nim-daemonize
+nimble install https://github.com/af001/nim-daemons
 ```
 
 #### Compile
@@ -23,9 +26,16 @@ nimble install https://github.com/af001/nim-hashids
 nim compile -d:ssl --passC:-flto nsh.nim
 nim compile -d:ssl --passC:-flto nshd.nim
 
+# Dynamic compiled for Linux
+nim --passC:-flto -d:release -d:ssl --opt:size c nsh.nim
+nim --passC:-flto -d:release -d:ssl --opt:size c nshd.nim
+
 # Static compiled for Linux
 nim --passL:-static -d:release -d:ssl --opt:size c nsh.nim
 nim --passL:-static -d:release -d:ssl --opt:size c nshd.nim
+
+# Windows
+nim --os:windows --cpu:amd64 --gcc.exe:x86_64-w64-mingw32-gcc --gcc.linkerexe:x86_64-w64-mingw32-gcc -d:ssl -d:release --app:gui c nshd.nim
 
 # Musl
 wget https://musl.libc.org/releases/musl-1.2.3.tar.gz
@@ -78,5 +88,4 @@ Options:
 ```
 
 #### Future 
-1. daemonize nshd
-2. Upload and download feature
+1. Upload and download feature
