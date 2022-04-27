@@ -344,7 +344,7 @@ var p = newParser:
     help("Nim-shell server")
     flag("-v", "--verbose", help="Enable verbost output for debugging")
     flag("-n", "--nossl", help="Disable SSL. Linux only. Windows default due to extra dependency requirments")
-    flag("-d", "--nodaemon", help="Don't daemonize. Windows only.")
+    flag("-d", "--nodaemon", help="Don't daemonize (foreground)")
     option("-p", "--port", help="Override default port", required=false)
     option("-k", "--key", help="Override default shared secret", required=false)
 
