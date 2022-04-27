@@ -214,7 +214,7 @@ proc main(port: int, target, key: string, ssl, verbose: bool) =
 # Parse client command line params
 var p = newParser:
     help("Nim-shell client")
-    flag("-s", "--ssl", help="Enable SSL")
+    flag("-s", "--ssl", help="Use SSL. Linux only. Windows does not support SSL without extra dependencies")
     flag("-v", "--verbose", help="Enable verbose output")
     option("-p", "--port", help="Target port", required=true)
     option("-t", "--target", help="Target IP", required=true)
