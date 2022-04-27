@@ -67,7 +67,7 @@ Usage:
 Options:
   -h, --help
   -v, --verbose              Enable verbost output for debugging
-  -n, --nossl                Disable SSL
+  -n, --nossl                Disable SSL. Linux only. Windows default due to extra dependency requirments
   -p, --port=PORT            Override default port
   -k, --key=KEY              Override default shared secret
 
@@ -80,7 +80,7 @@ Usage:
 
 Options:
   -h, --help
-  -s, --ssl                  Enable SSL
+  -s, --ssl                  Use SSL. Linux only. Windows does not support SSL due to extra dependency requirments
   -v, --verbose              Enable verbose output
   -p, --port=PORT            Target port
   -t, --target=TARGET        Target IP
